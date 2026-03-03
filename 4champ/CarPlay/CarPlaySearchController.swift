@@ -15,6 +15,9 @@ class CarPlayController: NSObject {
     private var fetcher: ModuleFetcher?
     private var lastPlayedModules: [MMD] = []
     private var nowPlayingTemplate: CPListTemplate?
+    private var isRadioActive = false
+    private var radioLastPlayed = 0
+    private var radioFetchers: [ModuleFetcher] = []
 
     init(interfaceController: CPInterfaceController) {
         self.interfaceController = interfaceController
@@ -26,20 +29,29 @@ class CarPlayController: NSObject {
     deinit {
         teardownRemoteCommands()
         modulePlayer.removePlayerObserver(self)
+        radioFetchers.forEach { $0.cancel() }
     }
 
     // MARK: - Root template
 
     func makeRootTemplate() -> CPListTemplate {
-        let item = CPListItem(text: "Last played",
-                             detailText: "Recently played modules",
-                             image: nil,
-                             showsDisclosureIndicator: true)
-        item.handler = { [weak self] _, done in
+        let lastPlayedItem = CPListItem(text: "Last played",
+                                        detailText: "Recently played modules",
+                                        image: nil,
+                                        showsDisclosureIndicator: true)
+        lastPlayedItem.handler = { [weak self] _, done in
             DispatchQueue.main.async { self?.pushLastPlayedTemplate() }
             done()
         }
-        return CPListTemplate(title: "4champ", sections: [CPListSection(items: [item])])
+        let radioItem = CPListItem(text: "Radio",
+                                   detailText: "Stream modules from AMP",
+                                   image: nil,
+                                   showsDisclosureIndicator: true)
+        radioItem.handler = { [weak self] _, done in
+            DispatchQueue.main.async { self?.pushRadioTemplate() }
+            done()
+        }
+        return CPListTemplate(title: "4champ", sections: [CPListSection(items: [lastPlayedItem, radioItem])])
     }
 
     // MARK: - Remote command centre
@@ -101,7 +113,7 @@ class CarPlayController: NSObject {
                                   image: moduleIcon(for: module),
                                   accessoryImage: starIcon,
                                   accessoryType: .none)
-        infoItem.handler = { [weak self, weak infoItem] _, done in
+        infoItem.handler = { [weak infoItem] _, done in
             DispatchQueue.main.async {
                 guard let infoItem else { done(); return }
                 if let updated = moduleStorage.toggleFavorite(module: module) {
@@ -230,6 +242,66 @@ class CarPlayController: NSObject {
             fetcher?.fetchModule(ampId: id)
         }
     }
+
+    // MARK: - Radio
+
+    private func pushRadioTemplate() {
+        let newItem = CPListItem(text: "New",
+                                 detailText: "Latest modules from AMP",
+                                 image: nil,
+                                 showsDisclosureIndicator: true)
+        newItem.handler = { [weak self] _, done in
+            DispatchQueue.main.async { self?.startNewRadio() }
+            done()
+        }
+        let allItem = CPListItem(text: "All", detailText: "Random modules (coming soon)")
+        allItem.isEnabled = false
+        let collectionItem = CPListItem(text: "Collection", detailText: "Saved modules (coming soon)")
+        collectionItem.isEnabled = false
+        let customItem = CPListItem(text: "Custom", detailText: "Custom selection (coming soon)")
+        customItem.isEnabled = false
+        let template = CPListTemplate(
+            title: "Radio",
+            sections: [CPListSection(items: [newItem, allItem, collectionItem, customItem])]
+        )
+        interfaceController?.pushTemplate(template, animated: true, completion: nil)
+    }
+
+    private func startNewRadio() {
+        stopRadio()
+        isRadioActive = true
+        radioLastPlayed = settings.collectionSize
+        modulePlayer.stop()
+        modulePlayer.cleanup()
+        fillRadioBuffer()
+    }
+
+    private func fillRadioBuffer() {
+        guard isRadioActive else { return }
+        guard Constants.radioBufferLen > modulePlayer.playQueue.count else { return }
+        guard radioLastPlayed > 0 else { return }
+        let id = radioLastPlayed
+        radioLastPlayed -= 1
+        let f = ModuleFetcher(delegate: self)
+        radioFetchers.append(f)
+        f.fetchModule(ampId: id)
+    }
+
+    private func stopRadio() {
+        isRadioActive = false
+        radioLastPlayed = 0
+        radioFetchers.forEach { $0.cancel() }
+        radioFetchers.removeAll()
+    }
+
+    private func removeRadioBufferHead() {
+        guard !modulePlayer.playQueue.isEmpty else { return }
+        let head = modulePlayer.playQueue.removeFirst()
+        guard let headId = head.id, moduleStorage.getModuleById(headId) == nil else { return }
+        if let url = head.localPath {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
 }
 
 // MARK: - ModuleFetcherDelegate
@@ -237,17 +309,34 @@ class CarPlayController: NSObject {
 extension CarPlayController: ModuleFetcherDelegate {
 
     func fetcherStateChanged(_ fetcher: ModuleFetcher, state: FetcherState) {
-        switch state {
-        case .done(let mmd):
-            DispatchQueue.main.async { modulePlayer.play(mmd: mmd) }
-        case .failed:
-            DispatchQueue.main.async { [weak self] in
-                let action = CPAlertAction(title: "OK", style: .default, handler: { _ in })
-                let alert = CPAlertTemplate(titleVariants: ["Download Failed"], actions: [action])
-                self?.interfaceController?.presentTemplate(alert, animated: true, completion: nil)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let isRadioFetcher = self.radioFetchers.contains { $0 === fetcher }
+            switch state {
+            case .done(let mmd):
+                if isRadioFetcher {
+                    self.radioFetchers.removeAll { $0 === fetcher }
+                    guard self.isRadioActive else { return }
+                    modulePlayer.playQueue.append(mmd)
+                    if modulePlayer.playQueue.first == mmd {
+                        modulePlayer.play(at: 0)
+                    }
+                    self.fillRadioBuffer()
+                } else {
+                    modulePlayer.play(mmd: mmd)
+                }
+            case .failed:
+                if isRadioFetcher {
+                    self.radioFetchers.removeAll { $0 === fetcher }
+                    if self.isRadioActive { self.fillRadioBuffer() }
+                } else {
+                    let action = CPAlertAction(title: "OK", style: .default, handler: { _ in })
+                    let alert = CPAlertTemplate(titleVariants: ["Download Failed"], actions: [action])
+                    self.interfaceController?.presentTemplate(alert, animated: true, completion: nil)
+                }
+            default:
+                break
             }
-        default:
-            break
         }
     }
 }
@@ -282,6 +371,12 @@ extension CarPlayController: ModulePlayerObserver {
         lastPlayedModules.insert(module, at: 0)
         if lastPlayedModules.count > 20 {
             lastPlayedModules = Array(lastPlayedModules.prefix(20))
+        }
+        if isRadioActive {
+            if let index = modulePlayer.playQueue.firstIndex(of: module), index > 0 {
+                removeRadioBufferHead()
+            }
+            fillRadioBuffer()
         }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
