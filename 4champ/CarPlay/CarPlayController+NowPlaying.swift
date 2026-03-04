@@ -217,14 +217,12 @@ extension CarPlayController: ModulePlayerObserver {
         if isRadioActive {
             switch radioChannel {
             case .new, .all:
-                if let index = modulePlayer.playQueue.firstIndex(of: module), index > 0 {
-                    removeRadioBufferHead()
-                }
+                // Keep played modules in queue so playPrev() can navigate back.
+                // fillRadioBuffer checks how many modules are ahead of the current one.
                 fillRadioBuffer()
             case .collection:
-                if let index = modulePlayer.playQueue.firstIndex(of: module), index > 0 {
-                    modulePlayer.playQueue.removeFirst()
-                }
+                // Append a new random module to keep the stream going, but do NOT
+                // remove the head so prev/next navigation works across history.
                 if let next = moduleStorage.getRandomModule() {
                     modulePlayer.playQueue.append(next)
                 }

@@ -165,7 +165,15 @@ extension CarPlayController {
     // Fetches one module from AMP server and appends it to the buffer (New / All channels)
     func fillRadioBuffer() {
         guard isRadioActive else { return }
-        guard modulePlayer.playQueue.count < Constants.radioBufferLen else { return }
+        // Count only modules ahead of the current one so history is preserved for playPrev()
+        let aheadCount: Int
+        if let current = modulePlayer.currentModule,
+           let idx = modulePlayer.playQueue.firstIndex(of: current) {
+            aheadCount = modulePlayer.playQueue.count - idx - 1
+        } else {
+            aheadCount = modulePlayer.playQueue.count
+        }
+        guard aheadCount < Constants.radioBufferLen else { return }
         guard let id = nextAMPId() else { return }
 
         let fetcher = ModuleFetcher(delegate: self)
@@ -197,16 +205,6 @@ extension CarPlayController {
 
         radioFetchers.forEach { $0.cancel() }
         radioFetchers.removeAll(keepingCapacity: false)
-    }
-
-    // Removes the oldest AMP-fetched module from the buffer and deletes its temp file
-    func removeRadioBufferHead() {
-        guard !modulePlayer.playQueue.isEmpty else { return }
-        let head = modulePlayer.playQueue.removeFirst()
-        guard let headId = head.id, moduleStorage.getModuleById(headId) == nil else { return }
-        if let url = head.localPath {
-            try? FileManager.default.removeItem(at: url)
-        }
     }
 
     // MARK: - Helpers
