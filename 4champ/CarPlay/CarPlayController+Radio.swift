@@ -9,85 +9,112 @@ import CarPlay
 import CoreData
 import Foundation
 
-enum CarPlayRadioChannel { case new, all, collection, custom }
+enum CarPlayRadioChannel {
+    case new
+    case all
+    case collection
+    case custom
+
+    var title: String {
+        switch self {
+        case .new: return "New"
+        case .all: return "All"
+        case .collection: return "Collection"
+        case .custom: return "Custom"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .new: return "Latest modules from AMP"
+        case .all: return "Random modules from AMP"
+        case .collection: return "Random modules from your collection"
+        case .custom: return "Play a playlist"
+        }
+    }
+}
 
 extension CarPlayController {
 
     // MARK: - Channel selection
 
     func pushRadioTemplate() {
-        let newItem = CPListItem(text: "New",
-                                 detailText: "Latest modules from AMP",
-                                 image: nil,
-                                 showsDisclosureIndicator: true)
-        newItem.handler = { [weak self] _, done in
-            DispatchQueue.main.async { self?.startNewRadio() }
-            done()
+        let channels: [(CarPlayRadioChannel, () -> Void)] = [
+            (.new, startNewRadio),
+            (.all, startAllRadio),
+            (.collection, startCollectionRadio),
+            (.custom, pushPlaylistPicker)
+        ]
+
+        let items = channels.map { channel, action in
+            makeRadioItem(for: channel, action: action)
         }
-        let allItem = CPListItem(text: "All",
-                                 detailText: "Random modules from AMP",
-                                 image: nil,
-                                 showsDisclosureIndicator: true)
-        allItem.handler = { [weak self] _, done in
-            DispatchQueue.main.async { self?.startAllRadio() }
-            done()
-        }
-        let collectionItem = CPListItem(text: "Collection",
-                                        detailText: "Random modules from your collection",
-                                        image: nil,
-                                        showsDisclosureIndicator: true)
-        collectionItem.handler = { [weak self] _, done in
-            DispatchQueue.main.async { self?.startCollectionRadio() }
-            done()
-        }
-        let customItem = CPListItem(text: "Custom",
-                                    detailText: "Play a playlist",
-                                    image: nil,
-                                    showsDisclosureIndicator: true)
-        customItem.handler = { [weak self] _, done in
-            DispatchQueue.main.async { self?.pushPlaylistPicker() }
-            done()
-        }
+
         let template = CPListTemplate(
             title: "Radio",
-            sections: [CPListSection(items: [newItem, allItem, collectionItem, customItem])]
+            sections: [CPListSection(items: items)]
         )
+
         interfaceController?.pushTemplate(template, animated: true) { _, _ in }
+    }
+
+    private func makeRadioItem(for channel: CarPlayRadioChannel, action: @escaping () -> Void) -> CPListItem {
+        let item = CPListItem(
+            text: channel.title,
+            detailText: channel.subtitle,
+            image: nil,
+            accessoryImage: nil,
+            accessoryType: .disclosureIndicator
+        )
+
+        item.handler = { _, completion in
+            action()
+            completion()
+        }
+
+        return item
     }
 
     // MARK: - Channel start
 
-    func startNewRadio() {
+    private func startAMPChannel(_ channel: CarPlayRadioChannel) {
         stopRadio()
+
         isRadioActive = true
-        radioChannel = .new
-        radioLastPlayed = settings.collectionSize
+        radioChannel = channel
+
+        if channel == .new {
+            radioLastPlayed = settings.collectionSize
+        }
+
         modulePlayer.stop()
         modulePlayer.cleanup()
+
         fillRadioBuffer()
     }
 
+    func startNewRadio() {
+        startAMPChannel(.new)
+    }
+
     func startAllRadio() {
-        stopRadio()
-        isRadioActive = true
-        radioChannel = .all
-        modulePlayer.stop()
-        modulePlayer.cleanup()
-        fillRadioBuffer()
+        startAMPChannel(.all)
     }
 
     func startCollectionRadio() {
         stopRadio()
+
         modulePlayer.stop()
         modulePlayer.cleanup()
-        var queue: [MMD] = []
-        for _ in 0..<Constants.radioBufferLen {
-            guard let mmd = moduleStorage.getRandomModule() else { break }
-            queue.append(mmd)
-        }
+
+        let queue = (0..<Constants.radioBufferLen)
+            .compactMap { _ in moduleStorage.getRandomModule() }
+
         guard !queue.isEmpty else { return }
+
         isRadioActive = true
         radioChannel = .collection
+
         modulePlayer.playQueue = queue
         modulePlayer.play(at: 0)
     }
@@ -103,7 +130,8 @@ extension CarPlayController {
                 let item = CPListItem(text: playlist.plName ?? "Unnamed",
                                       detailText: "\(count) module\(count == 1 ? "" : "s")",
                                       image: nil,
-                                      showsDisclosureIndicator: true)
+                                      accessoryImage: nil,
+                                      accessoryType: .disclosureIndicator)
                 item.handler = { [weak self] _, done in
                     DispatchQueue.main.async { self?.startCustomRadio(playlist: playlist) }
                     done()
@@ -124,8 +152,10 @@ extension CarPlayController {
         stopRadio()
         modulePlayer.stop()
         modulePlayer.cleanup()
+
         isRadioActive = true
         radioChannel = .custom
+
         modulePlayer.playQueue = queue
         modulePlayer.play(at: 0)
     }
@@ -135,30 +165,38 @@ extension CarPlayController {
     // Fetches one module from AMP server and appends it to the buffer (New / All channels)
     func fillRadioBuffer() {
         guard isRadioActive else { return }
-        guard Constants.radioBufferLen > modulePlayer.playQueue.count else { return }
-        let id: Int
+        guard modulePlayer.playQueue.count < Constants.radioBufferLen else { return }
+        guard let id = nextAMPId() else { return }
+
+        let fetcher = ModuleFetcher(delegate: self)
+        radioFetchers.append(fetcher)
+        fetcher.fetchModule(ampId: id)
+    }
+
+    private func nextAMPId() -> Int? {
         switch radioChannel {
         case .new:
-            guard radioLastPlayed > 0 else { return }
-            id = radioLastPlayed
-            radioLastPlayed -= 1
+            guard radioLastPlayed > 0 else { return nil }
+            defer { radioLastPlayed -= 1 }
+            return radioLastPlayed
+
         case .all:
-            id = Int.random(in: 1...settings.collectionSize)
+            return Int.random(in: 1...settings.collectionSize)
+
         default:
-            return
+            return nil
         }
-        let f = ModuleFetcher(delegate: self)
-        radioFetchers.append(f)
-        f.fetchModule(ampId: id)
     }
 
     func stopRadio() {
         isRadioActive = false
         radioLastPlayed = 0
+
         fetcher?.cancel()
         fetcher = nil
+
         radioFetchers.forEach { $0.cancel() }
-        radioFetchers.removeAll()
+        radioFetchers.removeAll(keepingCapacity: false)
     }
 
     // Removes the oldest AMP-fetched module from the buffer and deletes its temp file

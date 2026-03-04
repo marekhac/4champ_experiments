@@ -12,45 +12,35 @@ import UIKit
 // MARK: - Now Playing template
 
 extension CarPlayController {
-
     func makeNowPlayingSections(module: MMD, isPlaying: Bool) -> [CPListSection] {
         let starIcon = controlIcon(named: module.favorite ? "favestar-yellow" : "favestar-grey")
         let yellowIcon = controlIcon(named: "favestar-yellow")
         let greyIcon = controlIcon(named: "favestar-grey")
         let composer = module.composer?.trimmingCharacters(in: .whitespaces)
-        let title = module.name.count > 25 ? String(module.name.prefix(25)) + "…" : module.name
+        let title = truncated(module.name, limit: 25)
         let infoItem = CPListItem(text: title,
                                   detailText: (composer?.isEmpty == false) ? composer : nil,
                                   image: moduleIcon(for: module),
                                   accessoryImage: starIcon,
                                   accessoryType: .none)
-        infoItem.handler = { [weak infoItem] _, done in
-            DispatchQueue.main.async {
-                guard let infoItem else { done(); return }
-                if let updated = moduleStorage.toggleFavorite(module: module) {
-                    infoItem.setAccessoryImage(updated.favorite ? yellowIcon : greyIcon)
-                }
-                done()
+        infoItem.handler = { [weak infoItem] _, completion in
+            guard let infoItem else { completion(); return }
+            if let updated = moduleStorage.toggleFavorite(module: module) {
+                infoItem.setAccessoryImage(updated.favorite ? yellowIcon : greyIcon)
             }
+            completion()
+        }
+        
+        let toggleItem = controlItem(title: isPlaying ? "Pause" : "Play", iconName: isPlaying ? "pause-small" : "play-small") {
+            modulePlayer.status == .playing ? modulePlayer.pause() : modulePlayer.resume()
         }
 
-        let toggleItem = CPListItem(text: isPlaying ? "Pause" : "Play", detailText: nil,
-                                    image: controlIcon(named: isPlaying ? "pause-small" : "play-small"))
-        toggleItem.handler = { _, done in
-            if modulePlayer.status == .playing { modulePlayer.pause() } else { modulePlayer.resume() }
-            done()
-        }
-
-        let prevItem = CPListItem(text: "Previous", detailText: nil, image: controlIcon(named: "prev-small"))
-        prevItem.handler = { _, done in
+        let prevItem = controlItem(title: "Previous", iconName: "prev-small") {
             modulePlayer.playPrev()
-            done()
         }
 
-        let nextItem = CPListItem(text: "Next", detailText: nil, image: controlIcon(named: "next-small"))
-        nextItem.handler = { _, done in
+        let nextItem = controlItem(title: "Next", iconName: "next-small") {
             modulePlayer.playNext()
-            done()
         }
 
         return [
@@ -59,24 +49,47 @@ extension CarPlayController {
         ]
     }
 
+    private func controlItem(title: String, iconName: String, action: @escaping () -> Void) -> CPListItem {
+        let item = CPListItem(text: title, detailText: nil, image: controlIcon(named: iconName))
+
+        item.handler = { _, completion in
+            action()
+            completion()
+        }
+
+        return item
+    }
+
+    private func truncated(_ text: String, limit: Int) -> String {
+        guard text.count > limit else { return text }
+        return text.prefix(limit) + "…"
+    }
+
     func showOrUpdateNowPlaying(module: MMD, isPlaying: Bool) {
         let sections = makeNowPlayingSections(module: module, isPlaying: isPlaying)
-        if let existing = nowPlayingTemplate,
-           interfaceController?.topTemplate === existing {
+        let isVisible = interfaceController?.topTemplate === nowPlayingTemplate
+
+        if isVisible, let existing = nowPlayingTemplate {
             existing.updateSections(sections)
         } else {
             let template = CPListTemplate(title: "Now Playing", sections: sections)
             nowPlayingTemplate = template
-            interfaceController?.pushTemplate(template, animated: true) { _, _ in }
+            push(template)
         }
+    }
+
+    func push(_ template: CPListTemplate) {
+        interfaceController?.pushTemplate(template, animated: true) { _, _ in }
     }
 
     // MARK: - MPNowPlayingInfoCenter (lock screen / AirPlay)
 
     func setNowPlayingInfo(for module: MMD, playbackRate: Double) {
-        let artwork = MPMediaItemArtwork(boundsSize: CGSize(width: 300, height: 300)) { _ in
-            UIImage(named: "albumart") ?? UIImage()
-        }
+        lazy var artwork: MPMediaItemArtwork = {
+            let image = UIImage(named: "albumart") ?? UIImage()
+            return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        }()
+
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [
             MPMediaItemPropertyTitle: module.name,
             MPMediaItemPropertyArtist: module.composer ?? "",
@@ -87,10 +100,16 @@ extension CarPlayController {
         ]
     }
 
-    func updatePlaybackRate(_ rate: Double) {
+    private func updateNowPlayingInfo(_ changes: [String: Any]) {
         var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-        info[MPNowPlayingInfoPropertyPlaybackRate] = NSNumber(value: rate)
+        changes.forEach { info[$0.key] = $0.value }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    func updatePlaybackRate(_ rate: Double) {
+        updateNowPlayingInfo([
+            MPNowPlayingInfoPropertyPlaybackRate: rate
+        ])
     }
 
     // MARK: - Image helpers
@@ -125,6 +144,10 @@ extension CarPlayController {
 // MARK: - ModuleFetcherDelegate
 
 extension CarPlayController: ModuleFetcherDelegate {
+
+// TODO:
+//    private func handleRadioFetcherDone(_ fetcher: ModuleFetcher, mmd: MMD)
+//    private func handleManualFetcherDone(_ fetcher: ModuleFetcher, mmd: MMD)
 
     func fetcherStateChanged(_ fetcher: ModuleFetcher, state: FetcherState) {
         DispatchQueue.main.async { [weak self] in

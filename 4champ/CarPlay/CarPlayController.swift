@@ -13,11 +13,17 @@ import UIKit
 
 class CarPlayController: NSObject {
 
+    // MARK: - Dependencies
+
     weak var interfaceController: CPInterfaceController?
     var fetcher: ModuleFetcher?
+
+    // MARK: - Templates
+
     var nowPlayingTemplate: CPListTemplate?
 
-    // Radio state — shared with CarPlayController+Radio.swift
+    // MARK: - Radio State
+
     var isRadioActive = false
     var radioChannel: CarPlayRadioChannel = .new
     var radioLastPlayed = 0
@@ -26,6 +32,10 @@ class CarPlayController: NSObject {
     init(interfaceController: CPInterfaceController) {
         self.interfaceController = interfaceController
         super.init()
+        setup()
+    }
+
+    private func setup() {
         modulePlayer.addPlayerObserver(self)
         setupRemoteCommands()
     }
@@ -40,21 +50,25 @@ class CarPlayController: NSObject {
 
     func makeRootTemplate() -> CPListTemplate {
         let favouritesItem = CPListItem(text: "Favourites",
-                                         detailText: "Your starred modules",
-                                         image: UIImage(named: "localMods")?.withRenderingMode(.alwaysTemplate),
-                                         showsDisclosureIndicator: true)
-        favouritesItem.handler = { [weak self] _, done in
-            DispatchQueue.main.async { self?.pushFavouritesTemplate() }
-            done()
+                                        detailText: "Your starred modules",
+                                        image: UIImage(named: "localMods")?.withRenderingMode(.alwaysTemplate),
+                                        accessoryImage: nil,
+                                        accessoryType: .disclosureIndicator)
+        favouritesItem.handler = { [weak self] _, completion in
+            self?.pushFavouritesTemplate()
+            completion()
         }
+
         let radioItem = CPListItem(text: "Radio",
                                    detailText: "Stream modules from AMP",
                                    image: UIImage(named: "radio")?.withRenderingMode(.alwaysTemplate),
-                                   showsDisclosureIndicator: true)
-        radioItem.handler = { [weak self] _, done in
-            DispatchQueue.main.async { self?.pushRadioTemplate() }
-            done()
+                                   accessoryImage: nil,
+                                   accessoryType: .disclosureIndicator)
+        radioItem.handler = { [weak self] _, completion in
+            self?.pushRadioTemplate()
+            completion()
         }
+
         return CPListTemplate(title: "4champ", sections: [CPListSection(items: [favouritesItem, radioItem])])
     }
 
@@ -63,33 +77,17 @@ class CarPlayController: NSObject {
     private func setupRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
 
-        center.playCommand.isEnabled = true
-        center.playCommand.addTarget { _ in
-            modulePlayer.resume()
-            return .success
-        }
+        registerCommand(center.playCommand) { modulePlayer.resume() }
+        registerCommand(center.pauseCommand) { modulePlayer.pause() }
+        registerCommand(center.stopCommand) { modulePlayer.stop() }
+        registerCommand(center.nextTrackCommand) { modulePlayer.playNext() }
+        registerCommand(center.previousTrackCommand) { modulePlayer.playPrev() }
+    }
 
-        center.pauseCommand.isEnabled = true
-        center.pauseCommand.addTarget { _ in
-            modulePlayer.pause()
-            return .success
-        }
-
-        center.stopCommand.isEnabled = true
-        center.stopCommand.addTarget { _ in
-            modulePlayer.stop()
-            return .success
-        }
-
-        center.nextTrackCommand.isEnabled = true
-        center.nextTrackCommand.addTarget { _ in
-            modulePlayer.playNext()
-            return .success
-        }
-
-        center.previousTrackCommand.isEnabled = true
-        center.previousTrackCommand.addTarget { _ in
-            modulePlayer.playPrev()
+    private func registerCommand(_ command: MPRemoteCommand, action: @escaping () -> Void) {
+        command.isEnabled = true
+        command.addTarget { _ in
+            action()
             return .success
         }
     }
@@ -111,6 +109,7 @@ class CarPlayController: NSObject {
         if favourites.isEmpty {
             items = [CPListItem(text: "No favourites yet", detailText: nil)]
         } else {
+            // Create interactive list items for each favourite module
             items = favourites.map { mmd in
                 let item = CPListItem(text: mmd.name,
                                       detailText: mmd.composer,
@@ -127,22 +126,48 @@ class CarPlayController: NSObject {
     }
 
     private func fetchFavourites() -> [MMD] {
-        let request = ModuleInfo.fetchRequest()
-        request.predicate = NSPredicate(format: "modFavorite == 1")
-        request.sortDescriptors = [NSSortDescriptor(key: "modName", ascending: true,
-                                                     selector: #selector(NSString.caseInsensitiveCompare))]
-        let frc = moduleStorage.createFRC(fetchRequest: request, entityName: "ModuleInfo")
-        try? frc.performFetch()
-        return frc.fetchedObjects?.compactMap { MMD(cdi: $0) } ?? []
+        let request: NSFetchRequest<ModuleInfo> = ModuleInfo.fetchRequest()
+
+        // Only modules marked as favourite
+        request.predicate = NSPredicate(format: "modFavorite == YES")
+
+        // Alphabetical sort ignoring case differences
+        request.sortDescriptors = [
+            NSSortDescriptor(
+                key: #keyPath(ModuleInfo.modName),
+                ascending: true,
+                selector: #selector(NSString.caseInsensitiveCompare)
+            )
+        ]
+
+        let frc = moduleStorage.createFRC(
+            fetchRequest: request,
+            entityName: ModuleInfo.entity().name ?? "ModuleInfo"
+        )
+
+        do {
+            try frc.performFetch()
+
+            // Convert Core Data objects into immutable domain models
+            return frc.fetchedObjects?.map(MMD.init) ?? []
+        } catch {
+            assertionFailure("Failed to fetch favourites: \(error)")
+            return []
+        }
     }
 
     private func playOrFetch(mmd: MMD) {
+        // Fast path: file already exists locally
         if mmd.fileExists() {
             modulePlayer.play(mmd: mmd)
-        } else if let id = mmd.id {
-            fetcher?.cancel()
-            fetcher = ModuleFetcher(delegate: self)
-            fetcher?.fetchModule(ampId: id)
+            return
         }
+
+        // Cannot fetch without a remote identifier
+        guard let id = mmd.id else { return }
+
+        fetcher?.cancel()
+        fetcher = ModuleFetcher(delegate: self)
+        fetcher?.fetchModule(ampId: id)
     }
 }
