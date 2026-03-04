@@ -110,12 +110,12 @@ class CarPlayController: NSObject {
             items = [CPListItem(text: "No favourites yet", detailText: nil)]
         } else {
             // Create interactive list items for each favourite module
-            items = favourites.map { mmd in
+            items = favourites.enumerated().map { index, mmd in
                 let item = CPListItem(text: mmd.name,
                                       detailText: mmd.composer,
                                       image: moduleIcon(for: mmd))
                 item.handler = { [weak self] _, done in
-                    DispatchQueue.main.async { self?.playOrFetch(mmd: mmd) }
+                    DispatchQueue.main.async { self?.playFavourites(favourites, startingAt: index) }
                     done()
                 }
                 return item
@@ -156,18 +156,9 @@ class CarPlayController: NSObject {
         }
     }
 
-    private func playOrFetch(mmd: MMD) {
-        // Fast path: file already exists locally
-        if mmd.fileExists() {
-            modulePlayer.play(mmd: mmd)
-            return
-        }
-
-        // Cannot fetch without a remote identifier
-        guard let id = mmd.id else { return }
-
-        fetcher?.cancel()
-        fetcher = ModuleFetcher(delegate: self)
-        fetcher?.fetchModule(ampId: id)
+    private func playFavourites(_ favourites: [MMD], startingAt index: Int) {
+        stopRadio()
+        modulePlayer.playQueue = favourites
+        modulePlayer.play(at: index)
     }
 }
