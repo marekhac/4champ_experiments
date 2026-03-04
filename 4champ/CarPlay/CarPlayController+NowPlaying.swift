@@ -191,11 +191,6 @@ extension CarPlayController: ModulePlayerObserver {
     }
 
     func moduleChanged(module: MMD, previous: MMD?) {
-        lastPlayedModules.removeAll { $0.id == module.id }
-        lastPlayedModules.insert(module, at: 0)
-        if lastPlayedModules.count > 20 {
-            lastPlayedModules = Array(lastPlayedModules.prefix(20))
-        }
         if isRadioActive {
             switch radioChannel {
             case .new, .all:
