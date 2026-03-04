@@ -41,7 +41,7 @@ class CarPlayController: NSObject {
     func makeRootTemplate() -> CPListTemplate {
         let favouritesItem = CPListItem(text: "Favourites",
                                          detailText: "Your starred modules",
-                                         image: UIImage(named: "localMods"),
+                                         image: UIImage(named: "localMods")?.withRenderingMode(.alwaysTemplate),
                                          showsDisclosureIndicator: true)
         favouritesItem.handler = { [weak self] _, done in
             DispatchQueue.main.async { self?.pushFavouritesTemplate() }
@@ -49,7 +49,7 @@ class CarPlayController: NSObject {
         }
         let radioItem = CPListItem(text: "Radio",
                                    detailText: "Stream modules from AMP",
-                                   image: UIImage(named: "radio"),
+                                   image: UIImage(named: "radio")?.withRenderingMode(.alwaysTemplate),
                                    showsDisclosureIndicator: true)
         radioItem.handler = { [weak self] _, done in
             DispatchQueue.main.async { self?.pushRadioTemplate() }
