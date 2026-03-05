@@ -21,6 +21,7 @@ class CarPlayController: NSObject {
     // MARK: - Templates
 
     var nowPlayingTemplate: CPListTemplate?
+    private var collectionTemplate: CPListTemplate?
 
     // MARK: - Radio State
 
@@ -37,20 +38,22 @@ class CarPlayController: NSObject {
 
     private func setup() {
         modulePlayer.addPlayerObserver(self)
+        moduleStorage.addStorageObserver(self)
         setupRemoteCommands()
     }
 
     deinit {
         teardownRemoteCommands()
         modulePlayer.removePlayerObserver(self)
+        moduleStorage.removeStorageObserver(self)
         radioFetchers.forEach { $0.cancel() }
     }
 
     // MARK: - Root template
 
     func makeRootTemplate() -> CPListTemplate {
-        let favouritesItem = CPListItem(text: "Favourites",
-                                        detailText: "Your starred modules",
+        let favouritesItem = CPListItem(text: "Collection",
+                                        detailText: "Your saved modules",
                                         image: UIImage(named: "localMods")?.withRenderingMode(.alwaysTemplate),
                                         accessoryImage: nil,
                                         accessoryType: .disclosureIndicator)
@@ -104,61 +107,67 @@ class CarPlayController: NSObject {
     // MARK: - Navigation helpers
 
     private func pushFavouritesTemplate() {
-        let favourites = fetchFavourites()
-        let items: [CPListItem]
-        if favourites.isEmpty {
-            items = [CPListItem(text: "No favourites yet", detailText: nil)]
-        } else {
-            // Create interactive list items for each favourite module
-            items = favourites.enumerated().map { index, mmd in
-                let item = CPListItem(text: mmd.name,
-                                      detailText: mmd.composer,
-                                      image: moduleIcon(for: mmd))
-                item.handler = { [weak self] _, done in
-                    DispatchQueue.main.async { self?.playFavourites(favourites, startingAt: index) }
-                    done()
-                }
-                return item
-            }
-        }
-        let template = CPListTemplate(title: "Favourites", sections: [CPListSection(items: items)])
+        let template = CPListTemplate(title: "Collection", sections: makeCollectionSections())
+        collectionTemplate = template
         interfaceController?.pushTemplate(template, animated: true) { _, _ in }
     }
 
-    private func fetchFavourites() -> [MMD] {
-        let request: NSFetchRequest<ModuleInfo> = ModuleInfo.fetchRequest()
+    private func makeCollectionSections() -> [CPListSection] {
+        let modules = fetchCollection()
+        guard !modules.isEmpty else {
+            return [CPListSection(items: [CPListItem(text: "No modules in collection", detailText: nil)])]
+        }
+        let items = modules.enumerated().map { index, mmd in
+            let starIcon = controlIcon(named: mmd.favorite ? "favestar-yellow" : "favestar-grey")?.withRenderingMode(.alwaysOriginal)
+            let item = CPListItem(text: mmd.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                  detailText: mmd.composer,
+                                  image: moduleIcon(for: mmd),
+                                  accessoryImage: starIcon,
+                                  accessoryType: .none)
+            item.handler = { [weak self] _, done in
+                DispatchQueue.main.async { self?.playFavourites(modules, startingAt: index) }
+                done()
+            }
+            return item
+        }
+        return [CPListSection(items: items)]
+    }
 
-        // Only modules marked as favourite
-        request.predicate = NSPredicate(format: "modFavorite == YES")
-
-        // Alphabetical sort ignoring case differences
-        request.sortDescriptors = [
-            NSSortDescriptor(
-                key: #keyPath(ModuleInfo.modName),
-                ascending: true,
-                selector: #selector(NSString.caseInsensitiveCompare)
-            )
-        ]
-
-        let frc = moduleStorage.createFRC(
-            fetchRequest: request,
-            entityName: ModuleInfo.entity().name ?? "ModuleInfo"
-        )
-
+    private func fetchCollection() -> [MMD] {
+        let request: NSFetchRequest<ModuleInfo> = NSFetchRequest(entityName: "ModuleInfo")
         do {
-            try frc.performFetch()
-
-            // Convert Core Data objects into immutable domain models
-            return frc.fetchedObjects?.map(MMD.init) ?? []
+            let all = try moduleStorage.managedObjectContext.fetch(request)
+            return all
+                .filter { $0.radioOnly == nil || $0.radioOnly?.intValue == 0 }
+                .map(MMD.init)
+                .sorted {
+                    $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .localizedCaseInsensitiveCompare(
+                            $1.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        ) == .orderedAscending
+                }
         } catch {
-            assertionFailure("Failed to fetch favourites: \(error)")
+            log.error("CarPlay: fetchCollection failed: \(error)")
             return []
         }
     }
 
-    private func playFavourites(_ favourites: [MMD], startingAt index: Int) {
+    private func playFavourites(_ modules: [MMD], startingAt index: Int) {
         stopRadio()
-        modulePlayer.playQueue = favourites
+        modulePlayer.playQueue = modules
         modulePlayer.play(at: index)
     }
+}
+
+// MARK: - ModuleStorageObserver
+
+extension CarPlayController: ModuleStorageObserver {
+    func metadataChange(_ mmd: MMD) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let template = self.collectionTemplate else { return }
+            template.updateSections(self.makeCollectionSections())
+        }
+    }
+
+    func playlistChange() {}
 }
