@@ -46,33 +46,37 @@ class CarPlayController: NSObject {
         teardownRemoteCommands()
         modulePlayer.removePlayerObserver(self)
         moduleStorage.removeStorageObserver(self)
+        fetcher?.cancel()
         radioFetchers.forEach { $0.cancel() }
     }
 
     // MARK: - Root template
 
     func makeRootTemplate() -> CPListTemplate {
-        let favouritesItem = CPListItem(text: "Collection",
-                                        detailText: "Your saved modules",
-                                        image: UIImage(named: "localMods")?.withRenderingMode(.alwaysTemplate),
-                                        accessoryImage: nil,
-                                        accessoryType: .disclosureIndicator)
-        favouritesItem.handler = { [weak self] _, completion in
+        let favouritesItem = menuItem(text: "Collection",
+                                      detail: "Your saved modules",
+                                      imageName: "localMods") { [weak self] in
             self?.pushFavouritesTemplate()
-            completion()
         }
-
-        let radioItem = CPListItem(text: "Radio",
-                                   detailText: "Stream modules from AMP",
-                                   image: UIImage(named: "radio")?.withRenderingMode(.alwaysTemplate),
-                                   accessoryImage: nil,
-                                   accessoryType: .disclosureIndicator)
-        radioItem.handler = { [weak self] _, completion in
+        let radioItem = menuItem(text: "Radio",
+                                 detail: "Stream modules from AMP",
+                                 imageName: "radio") { [weak self] in
             self?.pushRadioTemplate()
+        }
+        return CPListTemplate(title: "4champ", sections: [CPListSection(items: [favouritesItem, radioItem])])
+    }
+
+    private func menuItem(text: String, detail: String, imageName: String, action: @escaping () -> Void) -> CPListItem {
+        let item = CPListItem(text: text,
+                              detailText: detail,
+                              image: UIImage(named: imageName)?.withRenderingMode(.alwaysTemplate),
+                              accessoryImage: nil,
+                              accessoryType: .disclosureIndicator)
+        item.handler = { _, completion in
+            action()
             completion()
         }
-
-        return CPListTemplate(title: "4champ", sections: [CPListSection(items: [favouritesItem, radioItem])])
+        return item
     }
 
     // MARK: - Remote command centre
@@ -136,15 +140,13 @@ class CarPlayController: NSObject {
     private func fetchCollection() -> [MMD] {
         let request: NSFetchRequest<ModuleInfo> = NSFetchRequest(entityName: "ModuleInfo")
         do {
-            let all = try moduleStorage.managedObjectContext.fetch(request)
-            return all
+            return try moduleStorage.managedObjectContext.fetch(request)
                 .filter { $0.radioOnly == nil || $0.radioOnly?.intValue == 0 }
                 .map(MMD.init)
-                .sorted {
-                    $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        .localizedCaseInsensitiveCompare(
-                            $1.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        ) == .orderedAscending
+                .sorted { lhs, rhs in
+                    let a = lhs.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let b = rhs.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
                 }
         } catch {
             log.error("CarPlay: fetchCollection failed: \(error)")

@@ -121,26 +121,25 @@ extension CarPlayController {
 
     func pushPlaylistPicker() {
         let playlists = fetchAllPlaylists()
-        let items: [CPListItem]
-        if playlists.isEmpty {
-            items = [CPListItem(text: "No playlists available", detailText: nil)]
-        } else {
-            items = playlists.map { playlist in
-                let count = playlist.modules?.count ?? 0
-                let item = CPListItem(text: playlist.plName ?? "Unnamed",
-                                      detailText: "\(count) module\(count == 1 ? "" : "s")",
-                                      image: nil,
-                                      accessoryImage: nil,
-                                      accessoryType: .disclosureIndicator)
-                item.handler = { [weak self] _, done in
-                    DispatchQueue.main.async { self?.startCustomRadio(playlist: playlist) }
-                    done()
-                }
-                return item
-            }
-        }
+        let items = playlists.isEmpty
+            ? [CPListItem(text: "No playlists available", detailText: nil)]
+            : playlists.map { makePlaylistItem(for: $0) }
         let template = CPListTemplate(title: "Custom", sections: [CPListSection(items: items)])
         interfaceController?.pushTemplate(template, animated: true) { _, _ in }
+    }
+
+    private func makePlaylistItem(for playlist: Playlist) -> CPListItem {
+        let count = playlist.modules?.count ?? 0
+        let item = CPListItem(text: playlist.plName ?? "Unnamed",
+                              detailText: "\(count) module\(count == 1 ? "" : "s")",
+                              image: nil,
+                              accessoryImage: nil,
+                              accessoryType: .disclosureIndicator)
+        item.handler = { [weak self] _, done in
+            DispatchQueue.main.async { self?.startCustomRadio(playlist: playlist) }
+            done()
+        }
+        return item
     }
 
     func startCustomRadio(playlist: Playlist) {
@@ -213,8 +212,6 @@ extension CarPlayController {
         let request = Playlist.fetchRequest()
         request.predicate = NSPredicate(format: "plId != 'radioList'")
         request.sortDescriptors = [NSSortDescriptor(key: "plName", ascending: true)]
-        let frc = moduleStorage.createFRC(fetchRequest: request, entityName: "Playlist")
-        try? frc.performFetch()
-        return frc.fetchedObjects ?? []
+        return (try? moduleStorage.managedObjectContext.fetch(request)) ?? []
     }
 }
