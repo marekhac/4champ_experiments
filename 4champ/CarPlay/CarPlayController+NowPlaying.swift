@@ -2,17 +2,18 @@
 //  CarPlayController+NowPlaying.swift
 //  4champ Amiga Music Player
 //
-//  Copyright © 2026 Aleksi Sitomaniemi. All rights reserved.
+//  Copyright © 2026 Marek Hac. All rights reserved.
 //
 
 import CarPlay
 import MediaPlayer
 import UIKit
 
-// MARK: - Now Playing template
-
 extension CarPlayController {
-    private func makeNowPlayingSections(module: MMD, isPlaying: Bool) -> [CPListSection] {
+
+    // MARK: - Now Playing template
+
+    func makeNowPlayingSections(module: MMD, isPlaying: Bool) -> [CPListSection] {
         let starIcon = controlIcon(named: module.favorite ? "favestar-yellow" : "favestar-grey")
         let yellowIcon = controlIcon(named: "favestar-yellow")
         let greyIcon = controlIcon(named: "favestar-grey")
@@ -30,15 +31,13 @@ extension CarPlayController {
             }
             completion()
         }
-        
+
         let toggleItem = controlItem(title: isPlaying ? "Pause" : "Play", iconName: isPlaying ? "pause-small" : "play-small") {
             modulePlayer.status == .playing ? modulePlayer.pause() : modulePlayer.resume()
         }
-
         let prevItem = controlItem(title: "Previous", iconName: "prev-small") {
             modulePlayer.playPrev()
         }
-
         let nextItem = controlItem(title: "Next", iconName: "next-small") {
             modulePlayer.playNext()
         }
@@ -51,12 +50,10 @@ extension CarPlayController {
 
     private func controlItem(title: String, iconName: String, action: @escaping () -> Void) -> CPListItem {
         let item = CPListItem(text: title, detailText: nil, image: controlIcon(named: iconName))
-
         item.handler = { _, completion in
             action()
             completion()
         }
-
         return item
     }
 
@@ -109,162 +106,4 @@ extension CarPlayController {
             MPNowPlayingInfoPropertyPlaybackRate: rate
         ])
     }
-
-    // MARK: - Image helpers
-
-    private static let formatLabelAttrs: [NSAttributedString.Key: Any] = [
-        .font: UIFont.boldSystemFont(ofSize: 10),
-        .foregroundColor: UIColor.darkText
-    ]
-
-    func controlIcon(named name: String) -> UIImage? {
-        guard let image = UIImage(named: name) else { return nil }
-        let size = CGSize(width: 12, height: 12)
-        return UIGraphicsImageRenderer(size: size).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
-        }
-    }
-
-    func moduleIcon(for module: MMD) -> UIImage? {
-        guard let base = UIImage(named: "modicon") else { return nil }
-        return UIGraphicsImageRenderer(size: base.size).image { _ in
-            base.draw(in: CGRect(origin: .zero, size: base.size))
-            if let format = module.type, !format.isEmpty {
-                drawFormatLabel(format, in: base.size)
-            }
-        }
-    }
-
-    private func resized(_ image: UIImage, to size: CGSize) -> UIImage {
-        UIGraphicsImageRenderer(size: size).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
-        }
-    }
-
-    // Must be called from within an active UIGraphicsImageRenderer context.
-    private func drawFormatLabel(_ format: String, in size: CGSize) {
-        let text = format.uppercased() as NSString
-        let textSize = text.size(withAttributes: Self.formatLabelAttrs)
-        let origin = CGPoint(
-            x: (size.width - textSize.width) / 2,
-            y: size.height - textSize.height - 8
-        )
-        text.draw(at: origin, withAttributes: Self.formatLabelAttrs)
-    }
-}
-
-// MARK: - ModuleFetcherDelegate
-
-extension CarPlayController: ModuleFetcherDelegate {
-
-    private enum FetcherRole { case radio, manual, stale }
-
-    private func role(of fetcher: ModuleFetcher) -> FetcherRole {
-        if radioFetchers.contains(where: { $0 === fetcher }) { return .radio }
-        if self.fetcher === fetcher { return .manual }
-        return .stale
-    }
-
-    func fetcherStateChanged(_ fetcher: ModuleFetcher, state: FetcherState) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            switch self.role(of: fetcher) {
-            case .radio:   self.handleRadioFetch(fetcher: fetcher, state: state)
-            case .manual:  self.handleManualFetch(fetcher: fetcher, state: state)
-            case .stale:   break
-            }
-        }
-    }
-
-    private func handleRadioFetch(fetcher: ModuleFetcher, state: FetcherState) {
-        switch state {
-        case .done(let mmd):
-            radioFetchers.removeAll { $0 === fetcher }
-            guard isRadioActive else { return }
-            modulePlayer.playQueue.append(mmd)
-            if modulePlayer.playQueue.first == mmd { modulePlayer.play(at: 0) }
-            fillRadioBuffer()
-        case .failed:
-            radioFetchers.removeAll { $0 === fetcher }
-            if isRadioActive { fillRadioBuffer() }
-        default:
-            break
-        }
-    }
-
-    private func handleManualFetch(fetcher: ModuleFetcher, state: FetcherState) {
-        switch state {
-        case .done(let mmd):
-            self.fetcher = nil
-            modulePlayer.play(mmd: mmd)
-        case .failed:
-            self.fetcher = nil
-            showDownloadError()
-        default:
-            break
-        }
-    }
-
-    private func showDownloadError() {
-        let alert = CPAlertTemplate(
-            titleVariants: ["Download Failed"],
-            actions: [CPAlertAction(title: "OK", style: .default) { _ in }]
-        )
-        interfaceController?.presentTemplate(alert, animated: true) { _, _ in }
-    }
-}
-
-// MARK: - ModulePlayerObserver
-
-extension CarPlayController: ModulePlayerObserver {
-
-    func statusChanged(status: PlayerStatus) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            switch status {
-            case .playing:
-                guard let module = modulePlayer.currentModule else { return }
-                self.setNowPlayingInfo(for: module, playbackRate: 1.0)
-                self.showOrUpdateNowPlaying(module: module, isPlaying: true)
-            case .paused:
-                self.updatePlaybackRate(0.0)
-                if let module = modulePlayer.currentModule {
-                    self.nowPlayingTemplate?.updateSections(
-                        self.makeNowPlayingSections(module: module, isPlaying: false)
-                    )
-                }
-            default:
-                break
-            }
-        }
-    }
-
-    func moduleChanged(module: MMD, previous: MMD?) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            if self.isRadioActive {
-                switch self.radioChannel {
-                case .new, .all:
-                    // Keep played modules in queue so playPrev() can navigate back.
-                    // fillRadioBuffer checks how many modules are ahead of the current one.
-                    self.fillRadioBuffer()
-                case .collection:
-                    // Append a new random module to keep the stream going, but do NOT
-                    // remove the head so prev/next navigation works across history.
-                    if let next = moduleStorage.getRandomModule() {
-                        modulePlayer.playQueue.append(next)
-                    }
-                case .custom:
-                    break
-                }
-            }
-            self.setNowPlayingInfo(for: module, playbackRate: 1.0)
-            self.nowPlayingTemplate?.updateSections(
-                self.makeNowPlayingSections(module: module, isPlaying: modulePlayer.status == .playing)
-            )
-        }
-    }
-
-    func errorOccurred(error: PlayerError) {}
-    func queueChanged(changeType: QueueChange) {}
 }

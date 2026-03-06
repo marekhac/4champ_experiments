@@ -2,7 +2,7 @@
 //  CarPlaySceneDelegate.swift
 //  4champ Amiga Music Player
 //
-//  Copyright © 2026 Aleksi Sitomaniemi. All rights reserved.
+//  Copyright © 2026 Marek Hac. All rights reserved.
 //
 
 import CarPlay

@@ -105,6 +105,10 @@
 		73D5FAE72E8440B20093739C /* PatternVisualiser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73D5FAE62E8440B20093739C /* PatternVisualiser.swift */; };
 		73E4FBF02ADC4D01009A985A /* RefreshLatestOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73E4FBEF2ADC4D01009A985A /* RefreshLatestOperation.swift */; };
 		73F564CE2C6A866D000B34A3 /* Toast.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F564CD2C6A866D000B34A3 /* Toast.swift */; };
+		F4465F0D2F5B80A00070FA83 /* CarPlayController+RemoteCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4465F0C2F5B80A00070FA83 /* CarPlayController+RemoteCommands.swift */; };
+		F4465F0F2F5B80AA0070FA83 /* CarPlayController+Collection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4465F0E2F5B80AA0070FA83 /* CarPlayController+Collection.swift */; };
+		F4465F112F5B81E00070FA83 /* CarPlayController+PlaybackEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4465F102F5B81E00070FA83 /* CarPlayController+PlaybackEvents.swift */; };
+		F4465F142F5B83870070FA83 /* CarPlayController+ImageHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4465F132F5B83870070FA83 /* CarPlayController+ImageHelpers.swift */; };
 		F4F33CBC2F585E4E00C696CC /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F33CBA2F585E4E00C696CC /* CarPlaySceneDelegate.swift */; };
 		F4F33CBD2F585E4E00C696CC /* CarPlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F33CB72F585E4E00C696CC /* CarPlayController.swift */; };
 		F4F33CBE2F585E4E00C696CC /* CarPlayController+NowPlaying.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F33CB82F585E4E00C696CC /* CarPlayController+NowPlaying.swift */; };
@@ -251,6 +255,10 @@
 		73D5FAE62E8440B20093739C /* PatternVisualiser.swift */ = {isa = PBXFileReference; indentWidth = 2; lastKnownFileType = sourcecode.swift; path = PatternVisualiser.swift; sourceTree = "<group>"; tabWidth = 2; };
 		73E4FBEF2ADC4D01009A985A /* RefreshLatestOperation.swift */ = {isa = PBXFileReference; indentWidth = 2; lastKnownFileType = sourcecode.swift; path = RefreshLatestOperation.swift; sourceTree = "<group>"; };
 		73F564CD2C6A866D000B34A3 /* Toast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Toast.swift; sourceTree = "<group>"; };
+		F4465F0C2F5B80A00070FA83 /* CarPlayController+RemoteCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CarPlayController+RemoteCommands.swift"; sourceTree = "<group>"; };
+		F4465F0E2F5B80AA0070FA83 /* CarPlayController+Collection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CarPlayController+Collection.swift"; sourceTree = "<group>"; };
+		F4465F102F5B81E00070FA83 /* CarPlayController+PlaybackEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CarPlayController+PlaybackEvents.swift"; sourceTree = "<group>"; };
+		F4465F132F5B83870070FA83 /* CarPlayController+ImageHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CarPlayController+ImageHelpers.swift"; sourceTree = "<group>"; };
 		F4F33CB72F585E4E00C696CC /* CarPlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayController.swift; sourceTree = "<group>"; };
 		F4F33CB82F585E4E00C696CC /* CarPlayController+NowPlaying.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CarPlayController+NowPlaying.swift"; sourceTree = "<group>"; };
 		F4F33CB92F585E4E00C696CC /* CarPlayController+Radio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CarPlayController+Radio.swift"; sourceTree = "<group>"; };
@@ -577,13 +585,25 @@
 			path = Components;
 			sourceTree = "<group>";
 		};
+		F4465F122F5B823D0070FA83 /* Helpers */ = {
+			isa = PBXGroup;
+			children = (
+				F4465F102F5B81E00070FA83 /* CarPlayController+PlaybackEvents.swift */,
+				F4465F132F5B83870070FA83 /* CarPlayController+ImageHelpers.swift */,
+				F4465F0C2F5B80A00070FA83 /* CarPlayController+RemoteCommands.swift */,
+			);
+			path = Helpers;
+			sourceTree = "<group>";
+		};
 		F4F248592F55E20D00FFB06A /* CarPlay */ = {
 			isa = PBXGroup;
 			children = (
+				F4465F122F5B823D0070FA83 /* Helpers */,
+				F4F33CBA2F585E4E00C696CC /* CarPlaySceneDelegate.swift */,
 				F4F33CB72F585E4E00C696CC /* CarPlayController.swift */,
+				F4465F0E2F5B80AA0070FA83 /* CarPlayController+Collection.swift */,
 				F4F33CB82F585E4E00C696CC /* CarPlayController+NowPlaying.swift */,
 				F4F33CB92F585E4E00C696CC /* CarPlayController+Radio.swift */,
-				F4F33CBA2F585E4E00C696CC /* CarPlaySceneDelegate.swift */,
 			);
 			path = CarPlay;
 			sourceTree = "<group>";
@@ -734,10 +754,12 @@
 				45D61F5320E1647300869814 /* RadioRouter.swift in Sources */,
 				453D9BBA241BF286002EEBAB /* PlaylistSelectorRouter.swift in Sources */,
 				7397C1DE29091504002D5CDB /* UADEReplayer.m in Sources */,
+				F4465F0F2F5B80AA0070FA83 /* CarPlayController+Collection.swift in Sources */,
 				453D9BBD241BF286002EEBAB /* PlaylistSelectorInteractor.swift in Sources */,
 				45CEA1DF2413C8E300930A72 /* SceneDelegate.swift in Sources */,
 				4535A4682114BB2D005FBB8B /* SearchViewController.swift in Sources */,
 				4509EA47226251EF0031408D /* ModuleInfo+CoreDataClass.swift in Sources */,
+				F4465F142F5B83870070FA83 /* CarPlayController+ImageHelpers.swift in Sources */,
 				450E506D2187A066008FB155 /* SettingsStereoCell.swift in Sources */,
 				45D61F5B20E1780D00869814 /* Appearance.swift in Sources */,
 				3A6B361A2EDB557A0095F17A /* SettingsAmigaResamplerCell.swift in Sources */,
@@ -760,6 +782,7 @@
 				45AA910220FF36C200794147 /* Replay.m in Sources */,
 				45AA911A2100EF1900794147 /* AmpSlider.swift in Sources */,
 				451B6AA02204B6CC001848FA /* LocalPresenter.swift in Sources */,
+				F4465F0D2F5B80A00070FA83 /* CarPlayController+RemoteCommands.swift in Sources */,
 				453D9BB8241BF286002EEBAB /* PlaylistSelectorPresenter.swift in Sources */,
 				45AA910320FF36C200794147 /* hvl_replay.cpp in Sources */,
 				73D5FAE72E8440B20093739C /* PatternVisualiser.swift in Sources */,
@@ -786,6 +809,7 @@
 				45AA91122100D13300794147 /* NowPlayingView.swift in Sources */,
 				45AA910620FF36C200794147 /* MPTReplayer.m in Sources */,
 				451B6AA72204BBBB001848FA /* ModuleStorage.swift in Sources */,
+				F4465F112F5B81E00070FA83 /* CarPlayController+PlaybackEvents.swift in Sources */,
 				4543983620D0344F00991ADC /* AboutInteractor.swift in Sources */,
 				73E4FBF02ADC4D01009A985A /* RefreshLatestOperation.swift in Sources */,
 				451B6AA32204B6CC001848FA /* LocalModels.swift in Sources */,
