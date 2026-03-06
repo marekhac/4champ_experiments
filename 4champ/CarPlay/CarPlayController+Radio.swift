@@ -90,7 +90,7 @@ extension CarPlayController {
         modulePlayer.stop()
         modulePlayer.cleanup()
 
-        fillRadioBuffer()
+        for _ in 0..<Constants.radioBufferLen { fillRadioBuffer() }
     }
 
     func startNewRadio() {
@@ -173,7 +173,7 @@ extension CarPlayController {
         } else {
             aheadCount = modulePlayer.playQueue.count
         }
-        guard aheadCount < Constants.radioBufferLen else { return }
+        guard aheadCount + radioFetchers.count < Constants.radioBufferLen else { return }
         guard let id = nextAMPId() else { return }
 
         let fetcher = ModuleFetcher(delegate: self)

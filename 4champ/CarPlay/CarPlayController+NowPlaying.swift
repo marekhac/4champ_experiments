@@ -12,7 +12,7 @@ import UIKit
 // MARK: - Now Playing template
 
 extension CarPlayController {
-    func makeNowPlayingSections(module: MMD, isPlaying: Bool) -> [CPListSection] {
+    private func makeNowPlayingSections(module: MMD, isPlaying: Bool) -> [CPListSection] {
         let starIcon = controlIcon(named: module.favorite ? "favestar-yellow" : "favestar-grey")
         let yellowIcon = controlIcon(named: "favestar-yellow")
         let greyIcon = controlIcon(named: "favestar-grey")
@@ -85,10 +85,8 @@ extension CarPlayController {
     // MARK: - MPNowPlayingInfoCenter (lock screen / AirPlay)
 
     func setNowPlayingInfo(for module: MMD, playbackRate: Double) {
-        lazy var artwork: MPMediaItemArtwork = {
-            let image = UIImage(named: "albumart") ?? UIImage()
-            return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-        }()
+        let image = UIImage(named: "albumart") ?? UIImage()
+        let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [
             MPMediaItemPropertyTitle: module.name,
@@ -102,7 +100,7 @@ extension CarPlayController {
 
     private func updateNowPlayingInfo(_ changes: [String: Any]) {
         var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-        changes.forEach { info[$0.key] = $0.value }
+        info.merge(changes) { _, new in new }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
@@ -145,46 +143,60 @@ extension CarPlayController {
 
 extension CarPlayController: ModuleFetcherDelegate {
 
-// TODO:
-//    private func handleRadioFetcherDone(_ fetcher: ModuleFetcher, mmd: MMD)
-//    private func handleManualFetcherDone(_ fetcher: ModuleFetcher, mmd: MMD)
+    private enum FetcherRole { case radio, manual, stale }
+
+    private func role(of fetcher: ModuleFetcher) -> FetcherRole {
+        if radioFetchers.contains(where: { $0 === fetcher }) { return .radio }
+        if self.fetcher === fetcher { return .manual }
+        return .stale
+    }
 
     func fetcherStateChanged(_ fetcher: ModuleFetcher, state: FetcherState) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let isRadioFetcher = self.radioFetchers.contains { $0 === fetcher }
-            switch state {
-            case .done(let mmd):
-                if isRadioFetcher {
-                    self.radioFetchers.removeAll { $0 === fetcher }
-                    guard self.isRadioActive else { return }
-                    modulePlayer.playQueue.append(mmd)
-                    if modulePlayer.playQueue.first == mmd {
-                        modulePlayer.play(at: 0)
-                    }
-                    self.fillRadioBuffer()
-                } else if self.fetcher === fetcher {
-                    // Only act if this is still the active manual fetcher
-                    self.fetcher = nil
-                    modulePlayer.play(mmd: mmd)
-                }
-                // else: stale fetcher from a previous radio or play session — discard
-            case .failed:
-                if isRadioFetcher {
-                    self.radioFetchers.removeAll { $0 === fetcher }
-                    if self.isRadioActive { self.fillRadioBuffer() }
-                } else if self.fetcher === fetcher {
-                    // Only show error for the active manual fetcher
-                    self.fetcher = nil
-                    let action = CPAlertAction(title: "OK", style: .default, handler: { _ in })
-                    let alert = CPAlertTemplate(titleVariants: ["Download Failed"], actions: [action])
-                    self.interfaceController?.presentTemplate(alert, animated: true) { _, _ in }
-                }
-                // else: stale fetcher — discard silently
-            default:
-                break
+            switch self.role(of: fetcher) {
+            case .radio:   self.handleRadioFetch(fetcher: fetcher, state: state)
+            case .manual:  self.handleManualFetch(fetcher: fetcher, state: state)
+            case .stale:   break
             }
         }
+    }
+
+    private func handleRadioFetch(fetcher: ModuleFetcher, state: FetcherState) {
+        switch state {
+        case .done(let mmd):
+            radioFetchers.removeAll { $0 === fetcher }
+            guard isRadioActive else { return }
+            modulePlayer.playQueue.append(mmd)
+            if modulePlayer.playQueue.first == mmd { modulePlayer.play(at: 0) }
+            fillRadioBuffer()
+        case .failed:
+            radioFetchers.removeAll { $0 === fetcher }
+            if isRadioActive { fillRadioBuffer() }
+        default:
+            break
+        }
+    }
+
+    private func handleManualFetch(fetcher: ModuleFetcher, state: FetcherState) {
+        switch state {
+        case .done(let mmd):
+            self.fetcher = nil
+            modulePlayer.play(mmd: mmd)
+        case .failed:
+            self.fetcher = nil
+            showDownloadError()
+        default:
+            break
+        }
+    }
+
+    private func showDownloadError() {
+        let alert = CPAlertTemplate(
+            titleVariants: ["Download Failed"],
+            actions: [CPAlertAction(title: "OK", style: .default) { _ in }]
+        )
+        interfaceController?.presentTemplate(alert, animated: true) { _, _ in }
     }
 }
 
@@ -214,24 +226,24 @@ extension CarPlayController: ModulePlayerObserver {
     }
 
     func moduleChanged(module: MMD, previous: MMD?) {
-        if isRadioActive {
-            switch radioChannel {
-            case .new, .all:
-                // Keep played modules in queue so playPrev() can navigate back.
-                // fillRadioBuffer checks how many modules are ahead of the current one.
-                fillRadioBuffer()
-            case .collection:
-                // Append a new random module to keep the stream going, but do NOT
-                // remove the head so prev/next navigation works across history.
-                if let next = moduleStorage.getRandomModule() {
-                    modulePlayer.playQueue.append(next)
-                }
-            case .custom:
-                break
-            }
-        }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            if self.isRadioActive {
+                switch self.radioChannel {
+                case .new, .all:
+                    // Keep played modules in queue so playPrev() can navigate back.
+                    // fillRadioBuffer checks how many modules are ahead of the current one.
+                    self.fillRadioBuffer()
+                case .collection:
+                    // Append a new random module to keep the stream going, but do NOT
+                    // remove the head so prev/next navigation works across history.
+                    if let next = moduleStorage.getRandomModule() {
+                        modulePlayer.playQueue.append(next)
+                    }
+                case .custom:
+                    break
+                }
+            }
             self.setNowPlayingInfo(for: module, playbackRate: 1.0)
             self.nowPlayingTemplate?.updateSections(
                 self.makeNowPlayingSections(module: module, isPlaying: modulePlayer.status == .playing)
