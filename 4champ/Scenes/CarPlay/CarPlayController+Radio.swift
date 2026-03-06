@@ -9,31 +9,6 @@ import CarPlay
 import CoreData
 import Foundation
 
-enum CarPlayRadioChannel {
-    case new
-    case all
-    case collection
-    case custom
-
-    var title: String {
-        switch self {
-        case .new: return "New"
-        case .all: return "All"
-        case .collection: return "Collection"
-        case .custom: return "Custom"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .new: return "Latest modules from AMP"
-        case .all: return "Random modules from AMP"
-        case .collection: return "Random modules from your collection"
-        case .custom: return "Play a playlist"
-        }
-    }
-}
-
 extension CarPlayController {
 
     // MARK: - Channel selection
@@ -80,11 +55,11 @@ extension CarPlayController {
     private func startAMPChannel(_ channel: CarPlayRadioChannel) {
         stopRadio()
 
-        isRadioActive = true
-        radioChannel = channel
+        radioState.isActive = true
+        radioState.channel = channel
 
         if channel == .new {
-            radioLastPlayed = settings.collectionSize
+            radioState.lastPlayed = settings.collectionSize
         }
 
         modulePlayer.stop()
@@ -112,8 +87,8 @@ extension CarPlayController {
 
         guard !queue.isEmpty else { return }
 
-        isRadioActive = true
-        radioChannel = .collection
+        radioState.isActive = true
+        radioState.channel = .collection
 
         modulePlayer.playQueue = queue
         modulePlayer.play(at: 0)
@@ -152,18 +127,18 @@ extension CarPlayController {
         modulePlayer.stop()
         modulePlayer.cleanup()
 
-        isRadioActive = true
-        radioChannel = .custom
+        radioState.isActive = true
+        radioState.channel = .custom
 
         modulePlayer.playQueue = queue
         modulePlayer.play(at: 0)
     }
 
-    // MARK: - Buffer management
+    // MARK: - Radio buffer management
 
     // Fetches one module from AMP server and appends it to the buffer (New / All channels)
     func fillRadioBuffer() {
-        guard isRadioActive else { return }
+        guard radioState.isActive else { return }
         // Count only modules ahead of the current one so history is preserved for playPrev()
         let aheadCount: Int
         if let current = modulePlayer.currentModule,
@@ -181,11 +156,11 @@ extension CarPlayController {
     }
 
     private func nextAMPId() -> Int? {
-        switch radioChannel {
+        switch radioState.channel {
         case .new:
-            guard radioLastPlayed > 0 else { return nil }
-            defer { radioLastPlayed -= 1 }
-            return radioLastPlayed
+            guard radioState.lastPlayed > 0 else { return nil }
+            defer { radioState.lastPlayed -= 1 }
+            return radioState.lastPlayed
 
         case .all:
             return Int.random(in: 1...settings.collectionSize)
@@ -196,8 +171,7 @@ extension CarPlayController {
     }
 
     func stopRadio() {
-        isRadioActive = false
-        radioLastPlayed = 0
+        radioState = CarPlayRadioState()
 
         fetcher?.cancel()
         fetcher = nil
